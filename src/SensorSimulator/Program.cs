@@ -37,7 +37,7 @@ Console.CancelKeyPress += (_, e) =>
     cts.Cancel();
 };
 
-Console.WriteLine($"[{sensor.Id}] Starting simulator — sending to {ingestionBaseUrl}/api/readings");
+Console.WriteLine($"[{sensor.Id}] Starting simulator - sending to {ingestionBaseUrl}/api/readings");
 Console.WriteLine($"[{sensor.Id}] Temperature range: [{sensor.TemperatureMin}, {sensor.TemperatureMax}]°C");
 Console.WriteLine("Press Ctrl+C to stop.");
 

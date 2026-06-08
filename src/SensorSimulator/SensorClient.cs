@@ -18,38 +18,79 @@ public sealed class SensorClient
     public async Task SendReadingAsync(CancellationToken cancellationToken)
     {
         var temperature = GenerateTemperature();
+        var alarmPriority = AlarmDetector.Detect(
+            temperature,
+            _sensor.AlarmThreshold1,
+            _sensor.AlarmThreshold2,
+            _sensor.AlarmThreshold3);
+
         var message = new SensorMessage(
             _sensor.Id,
             temperature,
             DateTimeOffset.UtcNow,
             _messageId++,
-            _sensor.DataQuality);
+            _sensor.DataQuality,
+            alarmPriority == AlarmPriority.None ? null : alarmPriority);
 
         try
         {
             var response = await _httpClient.PostAsJsonAsync("/api/readings", message, cancellationToken);
             if (response.IsSuccessStatusCode)
             {
-                Console.WriteLine(
-                    $"[{_sensor.Id}] Sent reading #{message.MessageId}: {temperature:F2}°C — OK ({(int)response.StatusCode})");
+                WriteLine(
+                    $"[{_sensor.Id}] Sent reading #{message.MessageId}: {temperature:F2}°C - OK ({(int)response.StatusCode})",
+                    alarmPriority);
             }
             else
             {
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
-                Console.WriteLine(
-                    $"[{_sensor.Id}] Sent reading #{message.MessageId}: {temperature:F2}°C — FAILED ({(int)response.StatusCode}) {body}");
+                WriteLine(
+                    $"[{_sensor.Id}] Sent reading #{message.MessageId}: {temperature:F2}°C - FAILED ({(int)response.StatusCode}) {body}",
+                    alarmPriority);
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine(
-                $"[{_sensor.Id}] Sent reading #{message.MessageId}: {temperature:F2}°C — ERROR: {ex.Message}");
+            WriteLine(
+                $"[{_sensor.Id}] Sent reading #{message.MessageId}: {temperature:F2}°C - ERROR: {ex.Message}",
+                alarmPriority);
         }
     }
 
     private double GenerateTemperature()
     {
+        if (Random.Shared.NextDouble() < 0.05)
+        {
+            var alarmMin = _sensor.AlarmThreshold1;
+            var alarmMax = _sensor.TemperatureMax;
+            if (alarmMin < alarmMax)
+            {
+                return alarmMin + Random.Shared.NextDouble() * (alarmMax - alarmMin);
+            }
+        }
+
         var range = _sensor.TemperatureMax - _sensor.TemperatureMin;
         return _sensor.TemperatureMin + Random.Shared.NextDouble() * range;
+    }
+
+    private static void WriteLine(string message, AlarmPriority alarmPriority)
+    {
+        var color = AlarmDetector.GetConsoleColor(alarmPriority);
+        if (color is null)
+        {
+            Console.WriteLine(message);
+            return;
+        }
+
+        var previous = Console.ForegroundColor;
+        try
+        {
+            Console.ForegroundColor = color.Value;
+            Console.WriteLine(message);
+        }
+        finally
+        {
+            Console.ForegroundColor = previous;
+        }
     }
 }
