@@ -18,3 +18,7 @@ Content-Type: application/json
 }
 
 ###
+
+POST {{IngestionService_HostAddress}}/api/sensors/SENSOR-001/block
+
+###
