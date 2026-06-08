@@ -71,7 +71,8 @@ public sealed class SensorPoolService : ISensorPoolService
 
             var timedOutSensors = await _dbContext.Sensors
                 .Where(s => s.IsActive &&
-                            (s.LastMessageAt == null || s.LastMessageAt < inactivityCutoff))
+                            s.LastMessageAt != null &&
+                            s.LastMessageAt < inactivityCutoff)
                 .ToListAsync(cancellationToken);
 
             foreach (var sensor in timedOutSensors)
@@ -80,7 +81,7 @@ public sealed class SensorPoolService : ISensorPoolService
                 _logger.LogWarning(
                     "Sensor {SensorId} marked inactive due to inactivity (last message: {LastMessageAt})",
                     sensor.Id,
-                    sensor.LastMessageAt?.ToString("O") ?? "never");
+                    sensor.LastMessageAt!.Value.ToString("O"));
             }
 
             var activeCount = await CountEligibleActiveSensorsAsync(utcNow, cancellationToken);
