@@ -1,3 +1,7 @@
+using IngestionService.Configuration;
+using IngestionService.Endpoints;
+using IngestionService.Services;
+using IngestionService.Workers;
 using Microsoft.EntityFrameworkCore;
 using SensorMonitoring.Data;
 
@@ -5,6 +9,13 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<SensorDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
+
+builder.Services.Configure<FaultToleranceOptions>(
+    builder.Configuration.GetSection(FaultToleranceOptions.SectionName));
+
+builder.Services.AddScoped<IReadingIngestionService, ReadingIngestionService>();
+builder.Services.AddScoped<ISensorPoolService, SensorPoolService>();
+builder.Services.AddHostedService<SensorPoolWorker>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -21,30 +32,7 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 app.MapGet("/health", () => Results.Ok());
-
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast")
-.WithOpenApi();
+app.MapReadingEndpoints();
+app.MapSensorEndpoints();
 
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}

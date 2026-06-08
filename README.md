@@ -9,9 +9,10 @@ This project implements a fault-tolerant sensor data ingestion pipeline with con
 
 | Service / Library              | Description                                                        |
 | ------------------------------ | ------------------------------------------------------------------ |
-| **IngestionService**           | Receives sensor readings via REST API                              |
-| **ConsensusService**           | Background worker for consensus value calculation                  |
-| **NotificationService**        | Real-time alarm and status notifications (SignalR in later phases) |
+| **IngestionService**           | Receives sensor readings via REST API, fault-tolerance pool worker |
+| **SensorSimulator**            | Console client that simulates sensor readings and client-side alarms |
+| **ConsensusService**           | Background worker for consensus value calculation (Phase 3+)       |
+| **NotificationService**        | Real-time alarm and status notifications (SignalR in Phase 3+)     |
 | **SensorMonitoring.Contracts** | Shared DTOs and enums (`SensorMessage`, `AlarmPayload`, etc.)      |
 | **SensorMonitoring.Data**      | EF Core entities, DbContext, and migrations                        |
 
@@ -84,6 +85,100 @@ To run other services locally:
 ```bash
 dotnet run --project src/NotificationService
 dotnet run --project src/ConsensusService
+```
+
+## Phase 2: Sensor simulation & fault tolerance
+
+Phase 2 implements the sensor data pipeline: simulated clients send readings to IngestionService, which persists them and maintains a pool of exactly 5 active sensors.
+
+### Flow
+
+1. **SensorSimulator** generates a random temperature every 1–10 seconds, detects alarm thresholds locally, and `POST`s a `SensorMessage` to IngestionService.
+2. **IngestionService** validates the message, writes a `SensorReading` (and `AlarmEvent` when an alarm is present), and updates `Sensor.LastMessageAt`.
+3. **SensorPoolWorker** runs every 2 seconds: sensors silent for more than 10 seconds are marked inactive; standby sensors are promoted to keep 5 active in the database.
+
+### IngestionService API
+
+| Method | Endpoint | Description |
+| ------ | -------- | ----------- |
+| `GET` | `/health` | Health check → `200 OK` |
+| `POST` | `/api/readings` | Accept a `SensorMessage` → `202 Accepted` |
+| `POST` | `/api/sensors/{id}/block` | Block a sensor for 30 seconds (testing) → `200 OK` |
+
+Example `SensorMessage` body:
+
+```json
+{
+  "sensorId": "SENSOR-001",
+  "temperatureValue": 22.5,
+  "timestamp": "2026-06-08T12:00:00Z",
+  "messageId": 1,
+  "dataQuality": "Good",
+  "alarmPriority": null
+}
+```
+
+Swagger UI (`/swagger`) is available when running IngestionService locally in Development.
+
+### Sensor simulator
+
+Run one simulator process per sensor ID (separate terminals):
+
+```bash
+dotnet run --project src/SensorSimulator -- --sensor-id SENSOR-001
+dotnet run --project src/SensorSimulator -- --sensor-id SENSOR-002
+dotnet run --project src/SensorSimulator -- --sensor-id SENSOR-003
+dotnet run --project src/SensorSimulator -- --sensor-id SENSOR-004
+dotnet run --project src/SensorSimulator -- --sensor-id SENSOR-005
+```
+
+The simulator reads `IngestionBaseUrl` from `src/SensorSimulator/appsettings.json` (default `http://localhost:5001` for Docker). If you run IngestionService locally on port `5288`, change that URL to `http://localhost:5288`.
+
+Successful sends print `OK (202)`. Alarm readings are color-coded in the console: yellow (priority 1), orange (priority 2), red (priority 3).
+
+Sensor metadata (temperature range, thresholds) is defined in `src/SensorSimulator/SensorConfig.cs` and matches the seeded data in the database (`SENSOR-001`–`007`; 5 active, 2 standby).
+
+### Fault tolerance
+
+| Setting | Default | Config key |
+| ------- | ------- | ---------- |
+| Inactivity timeout | 10 s | `FaultTolerance:InactivityTimeoutSeconds` |
+| Pool worker interval | 2 s | hardcoded in `SensorPoolWorker` |
+| Target active sensors | 5 | hardcoded in `SensorPoolService` |
+| Manual block duration | 30 s | `POST /api/sensors/{id}/block` |
+
+A sensor is deactivated only after it has sent at least one message and then goes silent for longer than the inactivity timeout. Promoting a standby updates `IsActive` in the database only — you must start a simulator for the promoted sensor ID (e.g. `SENSOR-006`) in a new terminal if you want it to send data.
+
+### Phase 2 quick test
+
+From the repository root:
+
+```bash
+docker compose up -d postgres
+dotnet ef database update --project src/SensorMonitoring.Data --startup-project src/IngestionService
+docker compose up --build ingestion-service
+```
+
+In new terminals:
+
+```bash
+# Health check (PowerShell)
+(Invoke-WebRequest -Uri http://localhost:5001/health -UseBasicParsing).StatusCode   # → 200
+
+# Start simulators (one per terminal)
+dotnet run --project src/SensorSimulator -- --sensor-id SENSOR-001
+```
+
+Block a sensor (PowerShell):
+
+```powershell
+Invoke-WebRequest -Uri http://localhost:5001/api/sensors/SENSOR-001/block -Method POST -UseBasicParsing
+```
+
+Failover test: stop one simulator, wait ~12 seconds, then start a standby:
+
+```bash
+dotnet run --project src/SensorSimulator -- --sensor-id SENSOR-006
 ```
 
 ## Database
