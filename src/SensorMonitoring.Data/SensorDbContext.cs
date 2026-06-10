@@ -45,6 +45,7 @@ public class SensorDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.Timestamp);
+            entity.HasIndex(e => e.PeriodStart).IsUnique();
         });
 
         modelBuilder.Entity<AlarmEvent>(entity =>

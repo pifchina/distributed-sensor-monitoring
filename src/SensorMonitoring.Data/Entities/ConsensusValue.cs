@@ -11,4 +11,8 @@ public class ConsensusValue
     public DateTimeOffset PeriodEnd { get; set; }
 
     public DateTimeOffset Timestamp { get; set; }
+
+    public int SensorCount { get; set; }
+
+    public int SampleCount { get; set; }
 }
