@@ -28,7 +28,8 @@ using var httpClient = new HttpClient
     BaseAddress = new Uri(ingestionBaseUrl)
 };
 
-var client = new SensorClient(httpClient, sensor);
+var malicious = ParseMalicious(args);
+var client = new SensorClient(httpClient, sensor, malicious);
 using var cts = new CancellationTokenSource();
 
 Console.CancelKeyPress += (_, e) =>
@@ -39,6 +40,15 @@ Console.CancelKeyPress += (_, e) =>
 
 Console.WriteLine($"[{sensor.Id}] Starting simulator - sending to {ingestionBaseUrl}/api/readings");
 Console.WriteLine($"[{sensor.Id}] Temperature range: [{sensor.TemperatureMin}, {sensor.TemperatureMax}]°C");
+
+if (malicious)
+{
+    var previous = Console.ForegroundColor;
+    Console.ForegroundColor = ConsoleColor.Red;
+    Console.WriteLine($"[{sensor.Id}] MALICIOUS MODE: sending pinned outlier values ({sensor.TemperatureMax - 0.5}°C)");
+    Console.ForegroundColor = previous;
+}
+
 Console.WriteLine("Press Ctrl+C to stop.");
 
 while (!cts.Token.IsCancellationRequested)
@@ -71,3 +81,5 @@ static string? ParseSensorId(string[] args)
 
     return null;
 }
+
+static bool ParseMalicious(string[] args) => args.Contains("--malicious");

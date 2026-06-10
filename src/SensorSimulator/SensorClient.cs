@@ -7,12 +7,14 @@ public sealed class SensorClient
 {
     private readonly HttpClient _httpClient;
     private readonly SensorMetadata _sensor;
+    private readonly bool _malicious;
     private long _messageId = 1;
 
-    public SensorClient(HttpClient httpClient, SensorMetadata sensor)
+    public SensorClient(HttpClient httpClient, SensorMetadata sensor, bool malicious = false)
     {
         _httpClient = httpClient;
         _sensor = sensor;
+        _malicious = malicious;
     }
 
     public async Task SendReadingAsync(CancellationToken cancellationToken)
@@ -59,6 +61,13 @@ public sealed class SensorClient
 
     private double GenerateTemperature()
     {
+        // A malicious sensor consistently reports near its maximum, producing a
+        // clean statistical outlier the consensus service should detect.
+        if (_malicious)
+        {
+            return _sensor.TemperatureMax - 0.5;
+        }
+
         if (Random.Shared.NextDouble() < 0.05)
         {
             var alarmMin = _sensor.AlarmThreshold1;
