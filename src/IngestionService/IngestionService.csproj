@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SensorMonitoring.Contracts\SensorMonitoring.Contracts.csproj" />
     <ProjectReference Include="..\SensorMonitoring.Data\SensorMonitoring.Data.csproj" />
+    <ProjectReference Include="..\SensorMonitoring.Security\SensorMonitoring.Security.csproj" />
   </ItemGroup>
 
 </Project>

@@ -115,3 +115,6 @@ $RECYCLE.BIN/
 
 # Docker
 docker-compose.override.yml
+
+# Cryptographic keys (generate with: dotnet run --project src/SensorSimulator -- --keygen)
+keys/

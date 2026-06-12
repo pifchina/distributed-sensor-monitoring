@@ -13,9 +13,9 @@ This project implements a fault-tolerant sensor data ingestion pipeline with con
 | **SensorSimulator**            | Console client that simulates sensor readings and client-side alarms |
 | **ConsensusService**           | Background worker: per-minute consensus calculation and malicious-sensor (BFT) detection |
 | **NotificationService**        | Real-time alarm and status notifications (SignalR in Phase 3+)     |
-| **SensorMonitoring.Contracts** | Shared DTOs and enums (`SensorMessage`, `AlarmPayload`, etc.)      |
+| **SensorMonitoring.Contracts** | Shared DTOs and enums (`SensorMessage`, `AlarmPayload`, `SecureEnvelope`, etc.) |
 | **SensorMonitoring.Data**      | EF Core entities, DbContext, and migrations                        |
-
+| **SensorMonitoring.Security**  | Reusable message encryption (AES-256-GCM + RSA) and signing (ECDSA) used by simulator and server |
 
 ## Prerequisites
 
@@ -44,7 +44,10 @@ docker compose up -d postgres
 # 4. Apply database migrations
 dotnet ef database update --project src/SensorMonitoring.Data --startup-project src/IngestionService
 
-# 5. Start all services
+# 5. Generate cryptographic keys (one-time)
+dotnet run --project src/SensorSimulator -- --keygen
+
+# 6. Start all services
 docker compose up --build
 ```
 
@@ -232,6 +235,103 @@ Within 1–2 cycles the worker logs `Outliers detected: SENSOR-005` and `marked 
 # PowerShell (pipe SQL via stdin so quoted identifiers survive)
 'UPDATE "Sensors" SET "DataQuality"=''Good'' WHERE "Id"=''SENSOR-005'';' | docker exec -i git-postgres-1 psql -U snus -d sensordb
 ```
+## Phase 4: Security & reliable communication
+
+Phase 4 secures the sensor → server channel. Every message is **AES-256-GCM
+encrypted** (fresh key per message, RSA-wrapped for the server) and
+**ECDSA-signed** per sensor; the server verifies the signature before any
+processing. Replays are rejected via a timestamp window plus a strictly
+increasing per-sensor message ID, and a per-sensor rate limit (10 req/s)
+blocks flooding sensors. Full design and threat analysis:
+[docs/SECURITY.md](docs/SECURITY.md).
+
+### Migration required
+
+This phase adds the `Sensors.LastMessageId` column (replay protection):
+
+```bash
+dotnet ef database update --project src/SensorMonitoring.Data --startup-project src/IngestionService
+```
+
+### Key generation (one-time setup)
+
+Keys are **not** committed to the repository. Generate them once from the
+repo root:
+
+```bash
+dotnet run --project src/SensorSimulator -- --keygen
+```
+
+This writes a git-ignored `keys/` folder: `keys/server/` (server RSA private
+key + sensor public keys — mounted into the ingestion container by
+docker-compose) and `keys/client/` (server RSA public key + sensor private
+keys — used by simulators; copy this folder to the client machine for the
+two-machine demo).
+
+### Endpoint contract change
+
+`POST /api/readings` now accepts a `SecureEnvelope` (encrypted + signed)
+instead of a plain `SensorMessage`, plus a plaintext `X-Sensor-Id` header
+used by the rate limiter. Responses:
+
+| Status | Meaning |
+| ------ | ------- |
+| `202`  | Reading accepted |
+| `400`  | Malformed envelope / decryption failed / header–envelope ID mismatch |
+| `401`  | Signature verification failed (unknown sensor key or invalid signature) |
+| `409`  | Replay detected (stale timestamp or already-seen MessageId), or sensor blocked/inactive |
+| `429`  | Rate limit exceeded (more than 10 req/s from one sensor ID) |
+
+### Security test modes (simulator flags)
+
+```bash
+# Normal operation - readings accepted (202)
+dotnet run --project src/SensorSimulator -- --sensor-id SENSOR-001
+
+# Tampered signature - every message rejected (401), nothing persisted
+dotnet run --project src/SensorSimulator -- --sensor-id SENSOR-002 --bad-signature
+
+# Replay attack - each envelope sent twice; duplicate rejected (409)
+dotnet run --project src/SensorSimulator -- --sensor-id SENSOR-003 --replay
+
+# DoS flood (~20 msg/s) - first 10 accepted, then 429, then the sensor is
+# blocked for 30 s (409) and a standby sensor is promoted
+dotnet run --project src/SensorSimulator -- --sensor-id SENSOR-004 --flood
+```
+
+Rate-limit settings live in the `RateLimiting` section of
+`src/IngestionService/appsettings.json` (`PermitLimit`, `WindowSeconds`);
+the replay timestamp window is `Security:TimestampToleranceSeconds`.
+
+### Two-machine setup (defense demo)
+
+Server machine:
+
+```powershell
+# 1. Find the LAN IP (IPv4 address)
+ipconfig
+
+# 2. Allow inbound traffic on the ingestion port
+New-NetFirewallRule -DisplayName "SNUS ingestion" -Direction Inbound -Protocol TCP -LocalPort 5001 -Action Allow
+
+# 3. Generate keys and start the stack (binds to all interfaces)
+dotnet run --project src/SensorSimulator -- --keygen
+docker compose up --build
+```
+
+Client machine (needs the .NET 8 SDK and a copy of the repo):
+
+```powershell
+# 1. Copy the keys/client folder from the server machine into .\keys\client
+
+# 2. Point the simulator at the server and run
+$env:IngestionBaseUrl = "http://<SERVER-LAN-IP>:5001"
+dotnet run --project src/SensorSimulator -- --sensor-id SENSOR-001
+```
+
+Note: replay protection compares message timestamps with the server clock
+(±30 s tolerance), so both machines should have correct time (NTP — the
+Windows default — is sufficient).
 
 ## Database
 

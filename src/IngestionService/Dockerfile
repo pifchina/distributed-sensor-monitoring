@@ -4,6 +4,7 @@ WORKDIR /src
 COPY distributed-sensor-monitoring.sln .
 COPY src/SensorMonitoring.Contracts/SensorMonitoring.Contracts.csproj src/SensorMonitoring.Contracts/
 COPY src/SensorMonitoring.Data/SensorMonitoring.Data.csproj src/SensorMonitoring.Data/
+COPY src/SensorMonitoring.Security/SensorMonitoring.Security.csproj src/SensorMonitoring.Security/
 COPY src/IngestionService/IngestionService.csproj src/IngestionService/
 
 RUN dotnet restore src/IngestionService/IngestionService.csproj
