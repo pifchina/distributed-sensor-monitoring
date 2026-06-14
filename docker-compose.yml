@@ -25,9 +25,10 @@ services:
     environment:
       ConnectionStrings__Default: Host=postgres;Port=5432;Database=sensordb;Username=snus;Password=snus
       ASPNETCORE_URLS: http://+:8080
+      Security__ServerPrivateKeyPath: /app/keys/server/server_rsa_private.pem
+      Security__SensorPublicKeysDirectory: /app/keys/server/sensors
+      NotificationService__BaseUrl: http://notification-service:8080
 
-  Security__ServerPrivateKeyPath: /app/keys/server/server_rsa_private.pem
-  Security__SensorPublicKeysDirectory: /app/keys/server/sensors
   consensus-service:
     build:
       context: .
