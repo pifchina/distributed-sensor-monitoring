@@ -49,5 +49,18 @@ services:
     environment:
       ASPNETCORE_URLS: http://+:8080
 
+  gateway:
+    build:
+      context: .
+      dockerfile: src/GatewayService/Dockerfile
+    # Public ingress: /api/ingest -> ingestion-service, /hub -> notification-service
+    ports:
+      - "8080:8080"
+    depends_on:
+      - ingestion-service
+      - notification-service
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+
 volumes:
   pgdata:
