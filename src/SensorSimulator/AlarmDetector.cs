@@ -24,11 +24,6 @@ public static class AlarmDetector
         return AlarmPriority.None;
     }
 
-    public static ConsoleColor? GetConsoleColor(AlarmPriority priority) => priority switch
-    {
-        AlarmPriority.Priority1 => ConsoleColor.Yellow,
-        AlarmPriority.Priority2 => ConsoleColor.DarkYellow,
-        AlarmPriority.Priority3 => ConsoleColor.Red,
-        _ => null
-    };
+    public static ConsoleColor? GetConsoleColor(AlarmPriority priority) =>
+        AlarmColor.ToConsoleColor(priority);
 }

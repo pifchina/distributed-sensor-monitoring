@@ -12,7 +12,7 @@ This project implements a fault-tolerant sensor data ingestion pipeline with con
 | **IngestionService**           | Receives sensor readings via REST API, fault-tolerance pool worker |
 | **SensorSimulator**            | Console client that simulates sensor readings and client-side alarms |
 | **ConsensusService**           | Background worker: per-minute consensus calculation and malicious-sensor (BFT) detection |
-| **NotificationService**        | Real-time alarm and status notifications (SignalR in Phase 3+)     |
+| **NotificationService**        | Real-time alarm notifications: receives alarms from IngestionService, broadcasts over SignalR, prints color-coded console |
 | **SensorMonitoring.Contracts** | Shared DTOs and enums (`SensorMessage`, `AlarmPayload`, `SecureEnvelope`, etc.) |
 | **SensorMonitoring.Data**      | EF Core entities, DbContext, and migrations                        |
 | **SensorMonitoring.Security**  | Reusable message encryption (AES-256-GCM + RSA) and signing (ECDSA) used by simulator and server |
@@ -235,6 +235,37 @@ Within 1–2 cycles the worker logs `Outliers detected: SENSOR-005` and `marked 
 # PowerShell (pipe SQL via stdin so quoted identifiers survive)
 'UPDATE "Sensors" SET "DataQuality"=''Good'' WHERE "Id"=''SENSOR-005'';' | docker exec -i git-postgres-1 psql -U snus -d sensordb
 ```
+## Phase 3: Notifications & SignalR
+
+The **NotificationService** delivers alarms to operators in real time. When
+IngestionService persists a reading that crosses an alarm threshold, it pushes
+an `AlarmPayload` to NotificationService over HTTP (best-effort — a notification
+outage never blocks or fails ingestion). NotificationService then:
+
+1. Broadcasts an `AlarmNotification` (sensor ID, value, priority, color) to all
+   connected SignalR clients on the `AlarmRaised` event.
+2. Prints the alarm to its own console, color-coded by priority (yellow =
+   priority 1, orange = priority 2, red = priority 3).
+
+### Endpoints
+
+| Method | Endpoint | Description |
+| ------ | -------- | ----------- |
+| `GET`  | `/health` | Health check → `200 OK` |
+| `POST` | `/api/alarms` | Accept an `AlarmPayload` from IngestionService → `202 Accepted` |
+| (hub)  | `/hub/alarms` | SignalR hub; clients subscribe to the `AlarmRaised` event |
+
+### Running
+
+```bash
+docker compose up -d postgres
+docker compose up --build ingestion-service notification-service
+```
+
+IngestionService finds NotificationService via `NotificationService:BaseUrl`
+(`src/IngestionService/appsettings.json` for local dev, the
+`NotificationService__BaseUrl` env var inside Docker Compose).
+
 ## Phase 4: Security & reliable communication
 
 Phase 4 secures the sensor → server channel. Every message is **AES-256-GCM

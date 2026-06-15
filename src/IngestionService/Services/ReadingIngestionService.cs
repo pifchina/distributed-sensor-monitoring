@@ -12,12 +12,14 @@ public sealed class ReadingIngestionService : IReadingIngestionService
     private readonly SensorDbContext _dbContext;
     private readonly ILogger<ReadingIngestionService> _logger;
     private readonly SecurityOptions _securityOptions;
+    private readonly IAlarmNotifier _alarmNotifier;
 
-    public ReadingIngestionService(SensorDbContext dbContext, ILogger<ReadingIngestionService> logger, IOptions<SecurityOptions> securityOptions)
+    public ReadingIngestionService(SensorDbContext dbContext, ILogger<ReadingIngestionService> logger, IOptions<SecurityOptions> securityOptions, IAlarmNotifier alarmNotifier)
     {
         _dbContext = dbContext;
         _logger = logger;
         _securityOptions = securityOptions.Value;
+        _alarmNotifier = alarmNotifier;
     }
 
     public async Task<IngestionResult> IngestAsync(SensorMessage message, CancellationToken cancellationToken = default)
@@ -108,6 +110,13 @@ public sealed class ReadingIngestionService : IReadingIngestionService
             message.SensorId,
             message.TemperatureValue,
             alarmPriority);
+
+        if (alarmPriority != AlarmPriority.None)
+        {
+            await _alarmNotifier.NotifyAsync(
+                new AlarmPayload(message.SensorId, message.TemperatureValue, alarmPriority, message.Timestamp),
+                cancellationToken);
+        }
 
         return new IngestionResult(IngestionStatus.Accepted);
     }

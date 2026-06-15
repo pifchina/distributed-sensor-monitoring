@@ -29,6 +29,13 @@ builder.Services.AddSingleton<ISecureEnvelopeOpener>(provider =>
 });
 builder.Services.AddScoped<IReadingIngestionService, ReadingIngestionService>();
 builder.Services.AddScoped<ISensorPoolService, SensorPoolService>();
+
+var notificationBaseUrl = builder.Configuration["NotificationService:BaseUrl"]
+    ?? "http://localhost:5003";
+builder.Services.AddHttpClient<IAlarmNotifier, AlarmNotifier>(client =>
+{
+    client.BaseAddress = new Uri(notificationBaseUrl);
+});
 builder.Services.AddSingleton<SensorBlockCoordinator>();
 builder.Services.AddHostedService<SensorPoolWorker>();
 
