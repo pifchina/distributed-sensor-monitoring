@@ -136,7 +136,7 @@ dotnet run --project src/SensorSimulator -- --sensor-id SENSOR-004
 dotnet run --project src/SensorSimulator -- --sensor-id SENSOR-005
 ```
 
-The simulator reads `IngestionBaseUrl` from `src/SensorSimulator/appsettings.json` (default `http://localhost:5001` for Docker). If you run IngestionService locally on port `5288`, change that URL to `http://localhost:5288`.
+The simulator reads `IngestionBaseUrl` from `src/SensorSimulator/appsettings.json` (default `http://localhost:5001/api` for Docker) and posts to `<IngestionBaseUrl>/readings`. The base URL must include the ingestion API prefix (`/api` when talking directly to IngestionService, `/api/ingest` when going through the gateway). If you run IngestionService locally on port `5288`, change that URL to `http://localhost:5288/api`.
 
 Successful sends print `OK (202)`. Alarm readings are color-coded in the console: yellow (priority 1), orange (priority 2), red (priority 3).
 
@@ -357,7 +357,7 @@ Client machine (needs the .NET 8 SDK and a copy of the repo):
 # 1. Copy the keys/client folder from the server machine into .\keys\client
 
 # 2. Point the simulator at the server and run
-$env:IngestionBaseUrl = "http://<SERVER-LAN-IP>:5001"
+$env:IngestionBaseUrl = "http://<SERVER-LAN-IP>:5001/api"
 dotnet run --project src/SensorSimulator -- --sensor-id SENSOR-001
 ```
 
@@ -506,11 +506,20 @@ Then:
 ```
 
 Requests flow through the gateway exactly as in Docker Compose, e.g.
-`http://localhost:8080/api/ingest/readings`. For the two-machine demo, point the
-simulator at the server's LAN IP and run it unchanged:
+`http://localhost:8080/api/ingest/readings`. Point the simulator's
+`IngestionBaseUrl` at the gateway including the `/api/ingest` prefix (the gateway
+rewrites it to `/api/readings` for IngestionService):
 
 ```powershell
-$env:IngestionBaseUrl = "http://<SERVER-LAN-IP>:8080"
+# Same machine, via the port-forward above
+$env:IngestionBaseUrl = "http://localhost:8080/api/ingest"
+dotnet run --project src/SensorSimulator -- --sensor-id SENSOR-001
+```
+
+For the two-machine demo, use the server's LAN IP instead:
+
+```powershell
+$env:IngestionBaseUrl = "http://<SERVER-LAN-IP>:8080/api/ingest"
 dotnet run --project src/SensorSimulator -- --sensor-id SENSOR-001
 ```
 

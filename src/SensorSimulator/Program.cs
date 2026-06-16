@@ -30,7 +30,7 @@ var configuration = new ConfigurationBuilder()
     .Build();
 
 var options = configuration.Get<SimulatorOptions>() ?? new SimulatorOptions();
-var ingestionBaseUrl = options.IngestionBaseUrl.TrimEnd('/');
+var ingestionBaseUrl = options.IngestionBaseUrl.TrimEnd('/') + "/";
 
 
 var sensorPrivateKeyPath = Path.Combine(
@@ -68,7 +68,7 @@ Console.CancelKeyPress += (_, e) =>
     cts.Cancel();
 };
 
-Console.WriteLine($"[{sensor.Id}] Starting simulator - sending to {ingestionBaseUrl}/api/readings");
+Console.WriteLine($"[{sensor.Id}] Starting simulator - sending to {ingestionBaseUrl}readings");
 Console.WriteLine($"[{sensor.Id}] Temperature range: [{sensor.TemperatureMin}, {sensor.TemperatureMax}]°C");
 Console.WriteLine($"[{sensor.Id}] Messages are AES-256-GCM encrypted and ECDSA-signed.");
 
