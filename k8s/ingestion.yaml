@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingestion-service
+  namespace: snus
+  labels:
+    app: ingestion-service
+    app.kubernetes.io/part-of: distributed-sensor-monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ingestion-service
+  template:
+    metadata:
+      labels:
+        app: ingestion-service
+    spec:
+      containers:
+        - name: ingestion-service
+          image: snus/ingestion:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          envFrom:
+            - configMapRef:
+                name: app-config
+          env:
+            - name: ConnectionStrings__Default
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: ConnectionStrings__Default
+          volumeMounts:
+            # Server private key, referenced by Security__ServerPrivateKeyPath.
+            - name: server-private-key
+              mountPath: /app/keys/server
+              readOnly: true
+            # Sensor public keys, referenced by Security__SensorPublicKeysDirectory.
+            # Nested under the private key mount path so both coexist.
+            - name: sensor-public-keys
+              mountPath: /app/keys/server/sensors
+              readOnly: true
+      volumes:
+        - name: server-private-key
+          secret:
+            secretName: server-private-key
+        - name: sensor-public-keys
+          secret:
+            secretName: sensor-public-keys
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingestion-service
+  namespace: snus
+  labels:
+    app: ingestion-service
+spec:
+  type: ClusterIP
+  selector:
+    app: ingestion-service
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http

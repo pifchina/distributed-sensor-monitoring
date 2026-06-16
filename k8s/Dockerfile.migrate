@@ -1,0 +1,25 @@
+# Image that carries the source plus the dotnet-ef CLI so a one-shot
+# Kubernetes Job can apply EF Core migrations against the in-cluster Postgres.
+# Build from the repo root:  docker build -t snus/migrate:latest -f k8s/Dockerfile.migrate .
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+
+# Install the EF Core CLI and make it available on PATH.
+RUN dotnet tool install --global dotnet-ef --version 8.0.11
+ENV PATH="${PATH}:/root/.dotnet/tools"
+
+# Restore against the startup project (pulls in the Data project transitively).
+COPY distributed-sensor-monitoring.sln .
+COPY src/SensorMonitoring.Contracts/SensorMonitoring.Contracts.csproj src/SensorMonitoring.Contracts/
+COPY src/SensorMonitoring.Data/SensorMonitoring.Data.csproj src/SensorMonitoring.Data/
+COPY src/SensorMonitoring.Security/SensorMonitoring.Security.csproj src/SensorMonitoring.Security/
+COPY src/IngestionService/IngestionService.csproj src/IngestionService/
+RUN dotnet restore src/IngestionService/IngestionService.csproj
+
+COPY src/ src/
+
+# At runtime the Job supplies ConnectionStrings__Default (env var) pointing at
+# the in-cluster Postgres Service, so `database update` targets the right DB.
+ENTRYPOINT ["dotnet", "ef", "database", "update", \
+    "--project", "src/SensorMonitoring.Data", \
+    "--startup-project", "src/IngestionService"]

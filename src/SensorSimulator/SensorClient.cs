@@ -71,7 +71,7 @@ public sealed class SensorClient
 
         try
         {
-            var response = await _httpClient.PostAsJsonAsync("/api/readings", envelope, cancellationToken);
+            var response = await _httpClient.PostAsJsonAsync("readings", envelope, cancellationToken);
             var statusCode = (int)response.StatusCode;
             if (response.IsSuccessStatusCode)
             {

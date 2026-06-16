@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consensus-service
+  namespace: snus
+  labels:
+    app: consensus-service
+    app.kubernetes.io/part-of: distributed-sensor-monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: consensus-service
+  template:
+    metadata:
+      labels:
+        app: consensus-service
+    spec:
+      # Background worker: consumes from Postgres, no inbound traffic, so no Service.
+      containers:
+        - name: consensus-service
+          image: snus/consensus:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ConnectionStrings__Default
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: ConnectionStrings__Default

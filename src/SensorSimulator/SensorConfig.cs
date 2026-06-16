@@ -4,7 +4,7 @@ namespace SensorSimulator;
 
 public sealed class SimulatorOptions
 {
-    public string IngestionBaseUrl { get; set; } = "http://localhost:5001";
+    public string IngestionBaseUrl { get; set; } = "http://localhost:5001/api";
     public string ServerPublicKeyPath { get; set; } = "keys/client/server_rsa_public.pem";
     public string SensorPrivateKeysDirectory { get; set; } = "keys/client/sensors";
 }

@@ -1,0 +1,32 @@
+# One-shot Job that applies EF Core migrations to the in-cluster Postgres.
+# Run after postgres is Ready and before the app Deployments:
+#   kubectl apply -f k8s/migrate-job.yaml
+#   kubectl wait --for=condition=complete job/db-migrate -n snus --timeout=120s
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migrate
+  namespace: snus
+  labels:
+    app: db-migrate
+    app.kubernetes.io/part-of: distributed-sensor-monitoring
+spec:
+  backoffLimit: 4
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: db-migrate
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: db-migrate
+          image: snus/migrate:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            # Connection string targets the in-cluster Postgres Service.
+            - name: ConnectionStrings__Default
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: ConnectionStrings__Default

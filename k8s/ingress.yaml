@@ -1,0 +1,23 @@
+# Optional host-based Ingress for the gateway, for spec completeness.
+# Requires the NGINX ingress controller: `minikube addons enable ingress`.
+# Add `<minikube-ip> snus.local` to your hosts file, then browse http://snus.local/.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gateway
+  namespace: snus
+  labels:
+    app: gateway
+    app.kubernetes.io/part-of: distributed-sensor-monitoring
+spec:
+  rules:
+    - host: snus.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway
+                port:
+                  number: 8080
