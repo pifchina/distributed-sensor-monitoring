@@ -399,6 +399,131 @@ docker compose up --build
 Requests then flow through the gateway, e.g. `http://localhost:8080/api/ingest/readings`
 reaches IngestionService and `ws://localhost:8080/hub/alarms` reaches the SignalR hub.
 
+## Phase 5: Kubernetes (Minikube)
+
+The system also runs on Kubernetes, mirroring the Docker Compose topology. All
+manifests live in [`k8s/`](k8s/): a `Deployment` + `Service` + `ConfigMap` /
+`Secret` per microservice, a `PersistentVolumeClaim` for PostgreSQL, and a
+one-shot `Job` that applies EF Core migrations. Everything is isolated in the
+`snus` namespace.
+
+| Manifest | Resources |
+| -------- | --------- |
+| `k8s/namespace.yaml` | `Namespace` `snus` |
+| `k8s/postgres.yaml` | `Secret` `db-credentials`, `PersistentVolumeClaim` `pgdata`, PostgreSQL `Deployment` + `Service` (`postgres:5432`) |
+| `k8s/config.yaml` | shared `ConfigMap` `app-config` (ASPNETCORE URLs, notification base URL, key paths) |
+| `k8s/migrate-job.yaml` | `Job` `db-migrate` that runs `dotnet ef database update` |
+| `k8s/ingestion.yaml` | IngestionService `Deployment` + `Service` (mounts the crypto-key Secrets) |
+| `k8s/notification.yaml` | NotificationService `Deployment` + `Service` |
+| `k8s/consensus.yaml` | ConsensusService `Deployment` (background worker, no Service) |
+| `k8s/gateway.yaml` | GatewayService `Deployment` + `NodePort` `Service` (`30080` → `8080`) |
+| `k8s/ingress.yaml` | optional host-based `Ingress` (`snus.local`) for the gateway |
+
+The Service names (`postgres`, `ingestion-service`, `notification-service`)
+match the hostnames already baked into config, so no application changes are
+needed.
+
+### Prerequisites
+
+- [minikube](https://minikube.sigs.k8s.io/docs/start/) and
+  [kubectl](https://kubernetes.io/docs/tasks/tools/)
+- Crypto keys generated once (see Phase 4): `dotnet run --project src/SensorSimulator -- --keygen`
+
+Start the cluster:
+
+```powershell
+minikube start
+```
+
+### 1. Build the images into Minikube
+
+Minikube has its own image store. Point Docker at it and build there, so no
+registry push is required (every Deployment uses `imagePullPolicy: IfNotPresent`):
+
+```powershell
+minikube docker-env | Invoke-Expression
+docker build -t snus/ingestion:latest    -f src/IngestionService/Dockerfile .
+docker build -t snus/notification:latest -f src/NotificationService/Dockerfile .
+docker build -t snus/consensus:latest    -f src/ConsensusService/Dockerfile .
+docker build -t snus/gateway:latest      -f src/GatewayService/Dockerfile .
+docker build -t snus/migrate:latest      -f k8s/Dockerfile.migrate .
+```
+
+On Linux/macOS use `eval $(minikube docker-env)` instead of the first line.
+
+### 2. Create the crypto-key Secrets
+
+The crypto keys are git-ignored, so their Secrets are created imperatively from
+the on-disk `keys/` folder (not committed as YAML). A helper script handles both
+Secrets (and ensures the namespace exists):
+
+```powershell
+./k8s/create-secrets.ps1   # PowerShell
+./k8s/create-secrets.sh    # Linux/macOS
+```
+
+This creates `server-private-key` (from `keys/server/server_rsa_private.pem`)
+and `sensor-public-keys` (from `keys/server/sensors/`) in the `snus` namespace.
+The `db-credentials` Secret, by contrast, ships in `k8s/postgres.yaml` (demo
+password only).
+
+### 3. Apply the manifests (in order)
+
+```powershell
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/postgres.yaml
+kubectl rollout status deploy/postgres -n snus
+
+kubectl apply -f k8s/config.yaml
+kubectl apply -f k8s/migrate-job.yaml
+kubectl wait --for=condition=complete job/db-migrate -n snus --timeout=120s
+
+kubectl apply -f k8s/ingestion.yaml -f k8s/notification.yaml -f k8s/consensus.yaml -f k8s/gateway.yaml
+```
+
+Check everything is running:
+
+```powershell
+kubectl get pods -n snus
+```
+
+### 4. Reach the gateway
+
+The gateway `Service` is a `NodePort` exposed on `30080`. The simplest,
+cross-platform way to reach it (and the one that also works for the two-machine
+demo on the Windows docker driver, where the node IP is not LAN-reachable) is a
+port-forward bound to all interfaces:
+
+```powershell
+kubectl port-forward --address 0.0.0.0 svc/gateway 8080:8080 -n snus
+```
+
+Then:
+
+```powershell
+# Gateway health
+(Invoke-WebRequest -Uri http://localhost:8080/health -UseBasicParsing).StatusCode   # → 200
+```
+
+Requests flow through the gateway exactly as in Docker Compose, e.g.
+`http://localhost:8080/api/ingest/readings`. For the two-machine demo, point the
+simulator at the server's LAN IP and run it unchanged:
+
+```powershell
+$env:IngestionBaseUrl = "http://<SERVER-LAN-IP>:8080"
+dotnet run --project src/SensorSimulator -- --sensor-id SENSOR-001
+```
+
+Alternatively, `minikube service gateway -n snus --url` prints the NodePort URL,
+or enable the optional Ingress with `minikube addons enable ingress`, apply
+`k8s/ingress.yaml`, and add `<minikube-ip> snus.local` to your hosts file.
+
+### Teardown
+
+```powershell
+kubectl delete namespace snus
+```
+
 ## Database
 
 PostgreSQL 16 runs in Docker with these defaults:
